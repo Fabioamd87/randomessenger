@@ -51,7 +51,7 @@ class Receiver(threading.Thread):
         while self.running:
             try:
                 readable, writable, exceptional = select.select(self.inputs, self.outputs, self.inputs, timeout)
-            except Exception:
+            except select.error as ex:
                 print('ERRORE')
                 if ex.errno == errno.EBADF:
                     print("il server si e' disconnesso?")
@@ -76,11 +76,12 @@ class Receiver(threading.Thread):
                         try:
                             data = s.recv(1024)
                         except socket.error:
-                            print(socket.error)
+                            #alone                            
+                            pass
 
                         if data:
                             message = data.decode('utf-8')
-                            if message[:4] == '/sys':
+                            if message[:4] == '/sysme':
                                 print('sys message')
                                 self.new_message_signal.emit('sys_message', message[4:])
                             else:
@@ -94,14 +95,19 @@ class Receiver(threading.Thread):
                     try:
                         data = s.recv(1024)
                         if data:
-                            print('message from partner connection')
+                            print('message from server')
                             message = data.decode('utf-8')
-                            self.new_message_signal.emit('new_message', message)
+                            if message == '/sys alone':
+                                self.new_message_signal.emit('sys_message', 'You are alone on the server, wait or go')
+                            elif message == '/sys talk':
+                                self.new_message_signal.emit('sys_message', 'New partner, chat!')
+                            else:
+                                self.new_message_signal.emit('new_message', message)
                         else:
                             print('no data, partner disconnected?')
                             s.close()
                     except socket.error:
-                        print(socket.error)
+                        pass
 
         print('returning')
 
