@@ -10,11 +10,13 @@ import gst
 
 import threading
 import select
+import errno
 import Queue
-from socket import socket, AF_INET, SOCK_STREAM
+import socket
+from socket import AF_INET, SOCK_STREAM
 
-LOCAL_HOST = ''
-CHAT_PORT = 5000
+LOCAL_HOST = '' # Symbolic name meaning all available interfaces
+CHAT_PORT = 5000 # Arbitrary non-privileged port
 VIDEO_PORT = 5001
 
 
@@ -31,9 +33,11 @@ class Receiver(threading.Thread):
 
         self.new_message_signal = new_message_signal
         
-        self.sock = socket(AF_INET,SOCK_STREAM)
-        self.sock.bind((LOCAL_HOST, CHAT_PORT))
-        self.sock.listen(1)
+        self.sock = socket.socket(AF_INET,SOCK_STREAM)
+        
+        #listening for connections from other clients
+        #self.sock.bind((LOCAL_HOST, CHAT_PORT))
+        #self.sock.listen(1)
 
     def run(self):
         #now = datetime.datetime.now()
@@ -42,24 +46,26 @@ class Receiver(threading.Thread):
         self.outputs = []
 
         self.new_message_signal.emit('sys_message', 'Listening for connections...')
-    
-        self.connect('192.168.1.2') #gestire eccezioni
-        self.new_message_signal.emit('sys_message', 'Connected to the server')
+        self.connect('192.168.1.4') #gestire eccezioni
 
         while self.running:
             try:
                 readable, writable, exceptional = select.select(self.inputs, self.outputs, self.inputs, timeout)
-            except EBADF:
-                print("il server si e' disconnesso?")
-                sock.close()
+            except Exception:
+                print('ERRORE')
+                if ex.errno == errno.EBADF:
+                    print("il server si e' disconnesso?")
+                    sock.close()
+                    self.running = False
             for s in readable:
                 if s is self.sock:
                     if self.server_mode == False and self.client_mode == False: #ovvero siamo in attesa, non connessi
+                        #disconnettersi dal server, o avvisare
                         self.connection, self.client_address = s.accept()
-                        self.new_message_signal.emit('sys_message', 'Connection established with '+ self.client_address[0])
                         #connection.setblocking(0)
                         self.inputs.append(self.connection)
                         self.client_mode == True
+                        self.new_message_signal.emit('sys_message', 'Connection established with '+ self.client_address[0])
                         print('We are in server mode')
 
                         # Give the connection a queue for data we want to send
@@ -67,7 +73,11 @@ class Receiver(threading.Thread):
                     else:
                         #data from our connection
                         print('message')
-                        data = s.recv(1024)
+                        try:
+                            data = s.recv(1024)
+                        except socket.error:
+                            print(socket.error)
+
                         if data:
                             message = data.decode('utf-8')
                             if message[:4] == '/sys':
@@ -80,16 +90,19 @@ class Receiver(threading.Thread):
                             print('no data from the server')
                             s.close()
                 else:
-                    print('We are in server mode')
                     #another sock? another connection?
-                    data = s.recv(1024)
-                    if data:
-                        print('message from partner connection')
-                        message = data.decode('utf-8')
-                        self.new_message_signal.emit('new_message', message)
-                    else:
-                        print('no data, partner disconnected?')
-                        s.close()
+                    try:
+                        data = s.recv(1024)
+                        if data:
+                            print('message from partner connection')
+                            message = data.decode('utf-8')
+                            self.new_message_signal.emit('new_message', message)
+                        else:
+                            print('no data, partner disconnected?')
+                            s.close()
+                    except socket.error:
+                        print(socket.error)
+
         print('returning')
 
     def stop(self):
@@ -104,10 +117,26 @@ class Receiver(threading.Thread):
     def connect(self, address):
         self.new_message_signal.emit('sys_message', 'Connecting to '+ address+'...')
         self.client_address = address
-        self.sock = socket(AF_INET,SOCK_STREAM)
-        self.sock.connect((self.client_address, CHAT_PORT)) #gestire l'eccezioni
+        self.sock = socket.socket(AF_INET,SOCK_STREAM)
+        self.sock.settimeout(3)
+
+        try:
+            #gestire l'eccezioni
+            self.sock.connect((self.client_address, CHAT_PORT)) #se il server e' spento dovrebbe dare un eccezione non bloccarsi     
+        except socket.error as ex:
+            if ex.errno:
+                print(os.strerror(ex.errno))
+            if ex.errno == errno.EHOSTDOWN:
+                self.new_message_signal.emit('sys_message', 'Server is down, try later')
+            else:
+                self.new_message_signal.emit('sys_message', "Can't connect, try later")
+            return
+
         self.client_mode = True
         self.inputs.append(self.sock)
+        self.new_message_signal.emit('sys_message', 'Connected to the server')
+      
+
 
     def send(self, message):
         if self.client_mode:
