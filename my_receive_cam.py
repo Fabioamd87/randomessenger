@@ -4,9 +4,10 @@ but if you have open port on your firewall/router you can receive connection fro
 
 import sys, os
 import pygtk, gtk, gobject
-import pygst
-pygst.require("0.10")
-import gst
+if os.name == 'posix':
+    import pygst
+    pygst.require("0.10")
+    import gst
 
 import threading
 import select
