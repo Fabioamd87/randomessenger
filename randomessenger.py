@@ -46,6 +46,7 @@ class Receiver(threading.Thread):
         self.inputs = [self.sock]
         self.outputs = []
 
+        self.connection = None
         self.new_message_signal.emit('sys_message', 'Listening for connections...')
         self.connect(SERVER) #gestire eccezioni
 
@@ -57,6 +58,7 @@ class Receiver(threading.Thread):
                     print("il server si e' disconnesso?")
                     self.sock.close()
                     self.running = False
+                return
             for s in readable:
                 if s is self.sock:
                     if self.server_mode == False and self.client_mode == False: #ovvero siamo in attesa, non connessi
@@ -145,10 +147,13 @@ class Receiver(threading.Thread):
 
     def send(self, message):
         message = message.encode('utf-8')
-        if self.client_mode:
-            self.sock.send(message) #controllare disconnessione
+        if self.connection or self.sock:
+            if self.client_mode:
+                self.sock.send(message) #controllare disconnessione
+            else:
+                self.connection.send(message)
         else:
-            self.connection.send(message)
+            self.new_message_signal.emit('sys_message', "Can't send, are you connected? Try to restart the client")
 
 class Video():
     def __init__(self, host, port):
@@ -241,6 +246,8 @@ class Chat(gtk.Window):
 
     def on_send_clicked(self, widget):
         text = self.entry.get_text()
+        if text == '':
+            return
         self.receiver.send(text)
         self.buffer.insert(self.iter_pos,'You: '+text+'\n') #unificare
         self.entry.set_text('')
