@@ -16,7 +16,7 @@ import Queue
 import socket
 from socket import AF_INET, SOCK_STREAM
 
-SERVER = '192.168.1.4'
+SERVER = '192.168.1.3'
 LOCAL_HOST = '' # Symbolic name meaning all available interfaces
 CHAT_PORT = 5000 # Arbitrary non-privileged port
 VIDEO_PORT = 5001
@@ -33,8 +33,7 @@ class Receiver(threading.Thread):
         self.client_mode = False
         self.server_mode = False
 
-        self.new_message_signal = new_message_signal
-        
+        self.new_message_signal = new_message_signal        
         self.sock = socket.socket(AF_INET,SOCK_STREAM)
         
         #listening for connections from other clients
@@ -142,9 +141,10 @@ class Receiver(threading.Thread):
         self.new_message_signal.emit('sys_message', 'Connected to the server')
       
     def change_partner(self):
-        self.send('/sys next')
+        self.send('/sys next','utf-8')
 
     def send(self, message):
+        message = message.encode('utf-8')
         if self.client_mode:
             self.sock.send(message) #controllare disconnessione
         else:
