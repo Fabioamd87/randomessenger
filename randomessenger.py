@@ -4,9 +4,10 @@ but if you have open port on your firewall/router you can receive connection fro
 
 import sys, os
 import pygtk, gtk, gobject
-import pygst
-pygst.require("0.10")
-import gst
+if os.name == 'posix':
+    import pygst
+    pygst.require("0.10")
+    import gst
 
 import threading
 import select
@@ -15,6 +16,7 @@ import Queue
 import socket
 from socket import AF_INET, SOCK_STREAM
 
+SERVER = '192.168.1.4'
 LOCAL_HOST = '' # Symbolic name meaning all available interfaces
 CHAT_PORT = 5000 # Arbitrary non-privileged port
 VIDEO_PORT = 5001
@@ -46,16 +48,15 @@ class Receiver(threading.Thread):
         self.outputs = []
 
         self.new_message_signal.emit('sys_message', 'Listening for connections...')
-        self.connect('192.168.1.4') #gestire eccezioni
+        self.connect(SERVER) #gestire eccezioni
 
         while self.running:
             try:
                 readable, writable, exceptional = select.select(self.inputs, self.outputs, self.inputs, timeout)
-            except select.error as ex:
-                print('ERRORE')
-                if ex.errno == errno.EBADF:
+            except select.error, ex:
+                if ex[0] == errno.EBADF:
                     print("il server si e' disconnesso?")
-                    sock.close()
+                    self.sock.close()
                     self.running = False
             for s in readable:
                 if s is self.sock:
@@ -81,11 +82,9 @@ class Receiver(threading.Thread):
 
                         if data:
                             message = data.decode('utf-8')
-                            if message[:4] == '/sysme':
-                                print('sys message')
+                            if message[:6] == '/sysme':
                                 self.new_message_signal.emit('sys_message', message[4:])
                             else:
-                                print('message for our connection')
                                 self.new_message_signal.emit('new_message', message)
                         else:
                             print('no data from the server')
@@ -142,7 +141,8 @@ class Receiver(threading.Thread):
         self.inputs.append(self.sock)
         self.new_message_signal.emit('sys_message', 'Connected to the server')
       
-
+    def change_partner(self):
+        self.send('/sys next')
 
     def send(self, message):
         if self.client_mode:
@@ -193,18 +193,23 @@ class Chat(gtk.Window):
         scrolled_window=gtk.ScrolledWindow()
         scrolled_window.set_policy(gtk.POLICY_AUTOMATIC,gtk.POLICY_AUTOMATIC)
         scrolled_window.add(self.view)
-        self.vbox.add(scrolled_window)
+        
         self.entry=gtk.Entry()
         self.send_button=gtk.Button("Send")
         self.send_button.connect("clicked", self.on_send_clicked)
         self.connect_button = gtk.Button("Connect")
         self.connect_button.connect("clicked", self.on_connect_clicked)
+        self.next_button=gtk.Button("Next")
+        self.next_button.connect("clicked", self.on_next_clicked)
+
+        self.vbox.pack_start(self.next_button, expand=False, fill=False, padding=0)
+        self.vbox.add(scrolled_window)
 
         self.hbox=gtk.HBox()
         self.hbox.pack_start(self.entry, expand=True, fill=True, padding=0)
         self.hbox.pack_start(self.send_button, expand=False, fill=False, padding=0)
         self.hbox.pack_start(self.connect_button, expand=False, fill=False, padding=0)
-        self.vbox.pack_start(self.hbox, expand=False, fill=False, padding=0)   
+        self.vbox.pack_start(self.hbox, expand=False, fill=False, padding=0)
         self.show_all()
 
         self.entry.grab_focus()
@@ -219,19 +224,20 @@ class Chat(gtk.Window):
 
     def on_key_press_event(self, widget, event):
         keyname = gtk.gdk.keyval_name(event.keyval)
-        print "Key %s (%d) was pressed" % (keyname, event.keyval)
+        #print "Key %s (%d) was pressed" % (keyname, event.keyval)
         if event.keyval == 65293:
-            print('ENTER')
             self.send_button.clicked()
-
-        if self.entry.has_focus:
-            print('focus')
-        else:
-            print('non focus')
+        #if self.entry.has_focus:
+        #    print('focus')
+        #else:
+        #    print('non focus')
 
     def quit(self, widget):
         self.receiver.stop()
         gtk.main_quit()
+
+    def on_next_clicked(self, widget):
+        self.receiver.send('/sys next')
 
     def on_send_clicked(self, widget):
         text = self.entry.get_text()
