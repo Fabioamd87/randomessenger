@@ -83,7 +83,7 @@ class Receiver(threading.Thread):
                         if data:
                             message = data.decode('utf-8')
                             if message[:6] == '/sysme':
-                                self.new_message_signal.emit('sys_message', message[4:])
+                                self.new_message_signal.emit('sys_message', message[7:])
                             else:
                                 self.new_message_signal.emit('new_message', message)
                         else:
