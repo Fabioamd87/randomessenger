@@ -10,13 +10,14 @@ if os.name == 'posix':
     import gst
 
 import threading
+import time
 import select
 import errno
 import Queue
 import socket
 from socket import AF_INET, SOCK_STREAM
 
-SERVER = '192.168.1.3'
+SERVER = '192.168.1.4'
 LOCAL_HOST = '' # Symbolic name meaning all available interfaces
 CHAT_PORT = 5000 # Arbitrary non-privileged port
 VIDEO_PORT = 5001
@@ -43,7 +44,7 @@ class Receiver(threading.Thread):
     def run(self):
         #now = datetime.datetime.now()
         timeout = 1
-        self.inputs = [self.sock]
+        self.inputs = set([self.sock])
         self.outputs = []
 
         self.connection = None
@@ -53,19 +54,19 @@ class Receiver(threading.Thread):
         while self.running:
             try:
                 readable, writable, exceptional = select.select(self.inputs, self.outputs, self.inputs, timeout)
-            except select.error, ex:
-                if ex[0] == errno.EBADF:
-                    print("il server si e' disconnesso?")
-                    self.sock.close()
-                    self.running = False
+            except:
+                print('select error')
+                self.sock.close()
+                self.running = False
                 return
+
             for s in readable:
                 if s is self.sock:
                     if self.server_mode == False and self.client_mode == False: #ovvero siamo in attesa, non connessi
                         #disconnettersi dal server, o avvisare
                         self.connection, self.client_address = s.accept()
                         #connection.setblocking(0)
-                        self.inputs.append(self.connection)
+                        self.inputs.add(self.connection)
                         self.client_mode == True
                         self.new_message_signal.emit('sys_message', 'Connection established with '+ self.client_address[0])
                         print('We are in server mode')
@@ -97,18 +98,13 @@ class Receiver(threading.Thread):
                         if data:
                             print('message from server')
                             message = data.decode('utf-8')
-                            if message == '/sys alone':
-                                self.new_message_signal.emit('sys_message', 'You are alone on the server, wait or go')
-                            elif message == '/sys talk':
-                                self.new_message_signal.emit('sys_message', 'New partner, chat!')
-                            else:
-                                self.new_message_signal.emit('new_message', message)
+                            self.new_message_signal.emit('new_message', message)
                         else:
                             print('no data, partner disconnected?')
                             s.close()
                     except socket.error:
                         pass
-
+            time.sleep(1)
         print('returning')
 
     def stop(self):
@@ -116,19 +112,29 @@ class Receiver(threading.Thread):
         for c in self.inputs:
             c.close()
         self.sock.close()
-        self.input = []
+        self.input = set()
         self.running = False
         print('stopping thread...')
 
     def connect(self, address):
         self.new_message_signal.emit('sys_message', 'Connecting to '+ address+'...')
         self.client_address = address
+
+        if self.sock:
+            self.sock.close()
+
         self.sock = socket.socket(AF_INET,SOCK_STREAM)
         self.sock.settimeout(3)
 
         try:
             #gestire l'eccezioni
-            self.sock.connect((self.client_address, CHAT_PORT)) #se il server e' spento dovrebbe dare un eccezione non bloccarsi     
+
+            self.sock.connect((self.client_address, CHAT_PORT)) #se il server e' spento dovrebbe dare un eccezione non bloccarsi
+            self.inputs = set()
+            self.inputs.add(self.sock)
+            self.client_mode = True
+            self.new_message_signal.emit('sys_message', 'Connected to the server')
+
         except socket.error as ex:
             if ex.errno:
                 print(os.strerror(ex.errno))
@@ -136,11 +142,10 @@ class Receiver(threading.Thread):
                 self.new_message_signal.emit('sys_message', 'Server is down, try later')
             else:
                 self.new_message_signal.emit('sys_message', "Can't connect, try later")
+            #self.sock.close()
             return
 
-        self.client_mode = True
-        self.inputs.append(self.sock)
-        self.new_message_signal.emit('sys_message', 'Connected to the server')
+
       
     def change_partner(self):
         self.send('/sys next','utf-8')
