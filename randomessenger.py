@@ -17,7 +17,7 @@ import Queue
 import socket
 from socket import AF_INET, SOCK_STREAM
 
-SERVER = '192.168.1.4'
+SERVER = 'fabioamd87.no-ip.org'
 LOCAL_HOST = '' # Symbolic name meaning all available interfaces
 CHAT_PORT = 5000 # Arbitrary non-privileged port
 VIDEO_PORT = 5001
